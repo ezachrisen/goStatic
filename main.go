@@ -20,7 +20,9 @@ var (
 	// Def of flags
 	portPtr                  = flag.Int("port", 8043, "The listening port")
 	context                  = flag.String("context", "", "The 'context' path on which files are served, e.g. 'doc' will serve the files at 'http://localhost:<port>/doc/'")
+	context2                 = flag.String("context2", "", "The 'context' path on which files are served, e.g. 'doc' will serve the files at 'http://localhost:<port>/doc/'")
 	basePath                 = flag.String("path", "/srv/http", "The path for the static files")
+	basePath2                = flag.String("path2", "", "The path for the static files")
 	fallbackPath             = flag.String("fallback", "", "Default fallback file. Either absolute for a specific asset (/index.html), or relative to recursively resolve (index.html)")
 	headerFlag               = flag.String("append-header", "", "HTTP response header, specified as `HeaderName:Value` that should be added to all responses.")
 	basicAuth                = flag.Bool("enable-basic-auth", false, "Enable basic auth. By default, password are randomly generated. Use --set-basic-auth to set it.")
@@ -108,10 +110,30 @@ func main() {
 
 	handler := handleReq(http.FileServer(fileSystem))
 
+	var handler2 http.Handler
+	if *basePath2 != "" {
+
+		var fileSystem http.FileSystem = http.Dir(*basePath2)
+
+		if *fallbackPath != "" {
+			fileSystem = fallback{
+				defaultPath: *fallbackPath,
+				fs:          fileSystem,
+			}
+		}
+		handler2 = handleReq(http.FileServer(fileSystem))
+	}
+
 	pathPrefix := "/"
 	if len(*context) > 0 {
 		pathPrefix = "/" + *context + "/"
 		handler = http.StripPrefix(pathPrefix, handler)
+	}
+
+	pathPrefix2 := "/"
+	if len(*context2) > 0 {
+		pathPrefix2 = "/" + *context2 + "/"
+		handler2 = http.StripPrefix(pathPrefix2, handler2)
 	}
 
 	if *basicAuth {
@@ -161,6 +183,9 @@ func main() {
 	}
 
 	http.Handle(pathPrefix, handler)
+	if *basePath2 != "" {
+		http.Handle(pathPrefix2, handler2)
+	}
 
 	log.Printf("Listening at 0.0.0.0%v %v...", port, pathPrefix)
 	log.Fatalln(http.ListenAndServe(port, nil))

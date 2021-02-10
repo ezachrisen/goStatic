@@ -11,7 +11,6 @@ import (
 	"io/ioutil"
 	"log"
 	"net/http"
-	"strconv"
 	"strings"
 	"sync"
 
@@ -20,23 +19,23 @@ import (
 
 var (
 	// Def of flags
-	configFile               = flag.String("config", "config.yaml", "The yaml file with config")
-	portPtr                  = flag.Int("port", 8043, "The listening port")
-	context                  = flag.String("context", "", "The 'context' path on which files are served, e.g. 'doc' will serve the files at 'http://localhost:<port>/doc/'")
-	context2                 = flag.String("context2", "", "The 'context' path on which files are served, e.g. 'doc' will serve the files at 'http://localhost:<port>/doc/'")
-	context3                 = flag.String("context3", "", "The 'context' path on which files are served, e.g. 'doc' will serve the files at 'http://localhost:<port>/doc/'")
-	basePath                 = flag.String("path", "/srv/http", "The path for the static files")
-	basePath2                = flag.String("path2", "", "The path for the static files")
-	fallbackPath             = flag.String("fallback", "", "Default fallback file. Either absolute for a specific asset (/index.html), or relative to recursively resolve (index.html)")
-	headerFlag               = flag.String("append-header", "", "HTTP response header, specified as `HeaderName:Value` that should be added to all responses.")
-	basicAuth                = flag.Bool("enable-basic-auth", false, "Enable basic auth. By default, password are randomly generated. Use --set-basic-auth to set it.")
-	healthCheck              = flag.Bool("enable-health", false, "Enable health check endpoint. You can call /health to get a 200 response. Useful for Kubernetes, OpenFaas, etc.")
-	setBasicAuth             = flag.String("set-basic-auth", "", "Define the basic auth. Form must be user:password")
-	defaultUsernameBasicAuth = flag.String("default-user-basic-auth", "gopher", "Define the user")
-	sizeRandom               = flag.Int("password-length", 16, "Size of the randomized password")
-	logRequest               = flag.Bool("enable-logging", false, "Enable log request")
-	httpsPromote             = flag.Bool("https-promote", false, "All HTTP requests should be redirected to HTTPS")
-	headerConfigPath         = flag.String("header-config-path", "/config/headerConfig.json", "Path to the config file for custom response headers")
+	configFile = flag.String("config", "config.yaml", "The yaml file with config")
+	// portPtr    = flag.Int("port", 8043, "The listening port")
+	// context                  = flag.String("context", "", "The 'context' path on which files are served, e.g. 'doc' will serve the files at 'http://localhost:<port>/doc/'")
+	// context2                 = flag.String("context2", "", "The 'context' path on which files are served, e.g. 'doc' will serve the files at 'http://localhost:<port>/doc/'")
+	// context3                 = flag.String("context3", "", "The 'context' path on which files are served, e.g. 'doc' will serve the files at 'http://localhost:<port>/doc/'")
+	// basePath                 = flag.String("path", "/srv/http", "The path for the static files")
+	// basePath2                = flag.String("path2", "", "The path for the static files")
+	// fallbackPath             = flag.String("fallback", "", "Default fallback file. Either absolute for a specific asset (/index.html), or relative to recursively resolve (index.html)")
+	// headerFlag               = flag.String("append-header", "", "HTTP response header, specified as `HeaderName:Value` that should be added to all responses.")
+	// basicAuth                = flag.Bool("enable-basic-auth", false, "Enable basic auth. By default, password are randomly generated. Use --set-basic-auth to set it.")
+	// healthCheck              = flag.Bool("enable-health", false, "Enable health check endpoint. You can call /health to get a 200 response. Useful for Kubernetes, OpenFaas, etc.")
+	// setBasicAuth             = flag.String("set-basic-auth", "", "Define the basic auth. Form must be user:password")
+	// defaultUsernameBasicAuth = flag.String("default-user-basic-auth", "gopher", "Define the user")
+	// sizeRandom               = flag.Int("password-length", 16, "Size of the randomized password")
+	// logRequest               = flag.Bool("enable-logging", false, "Enable log request")
+	// httpsPromote             = flag.Bool("https-promote", false, "All HTTP requests should be redirected to HTTPS")
+	// headerConfigPath         = flag.String("header-config-path", "/config/headerConfig.json", "Path to the config file for custom response headers")
 
 	username string
 	password string
@@ -76,15 +75,15 @@ func (w *gzipResponseWriter) Write(b []byte) (int, error) {
 
 func handleReq(h http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if *httpsPromote && r.Header.Get("X-Forwarded-Proto") == "http" {
-			http.Redirect(w, r, "https://"+r.Host+r.RequestURI, http.StatusMovedPermanently)
-			if *logRequest {
-				log.Println(301, r.Method, r.URL.Path)
-			}
-			return
-		}
+		// if *httpsPromote && r.Header.Get("X-Forwarded-Proto") == "http" {
+		// 	http.Redirect(w, r, "https://"+r.Host+r.RequestURI, http.StatusMovedPermanently)
+		// 	if *logRequest {
+		// 		log.Println(301, r.Method, r.URL.Path)
+		// 	}
+		// 	return
+		// }
 
-		if *logRequest {
+		if viper.GetBool("logRequest") {
 			log.Println(r.Method, r.URL.Path)
 		}
 
@@ -141,11 +140,11 @@ func main() {
 
 	fmt.Println("Endpoints: ", endpoints)
 	// sanity check
-	if len(*setBasicAuth) != 0 && !*basicAuth {
-		*basicAuth = true
-	}
+	// if len(*setBasicAuth) != 0 && !*basicAuth {
+	// 	*basicAuth = true
+	// }
 
-	port := ":" + strconv.FormatInt(int64(*portPtr), 10)
+	port := ":" + viper.GetString("port")
 
 	for i := range endpoints {
 		err := makeHandler(&endpoints[i])
@@ -205,6 +204,14 @@ func main() {
 	}
 
 	log.Printf("Listening at 0.0.0.0%v...", port)
+	log.Printf("  fallbackPath: %s\n", viper.GetString("fallbackPath"))
+	log.Printf("  logRequest  : %t\n", viper.GetBool("logRequest"))
+	log.Printf("  Endoints\n")
+	for i, v := range endpoints {
+		log.Printf("     (%d)\n", i)
+		log.Printf("       Context  : %s\n", v.context)
+		log.Printf("       Base Path: %s\n", v.basePath)
+	}
 	log.Fatalln(http.ListenAndServe(port, nil))
 }
 
@@ -212,9 +219,9 @@ func makeHandler(e *endpoint) error {
 
 	var fileSystem http.FileSystem = http.Dir(e.basePath)
 
-	if *fallbackPath != "" {
+	if viper.GetString("fallbackPath") != "" {
 		fileSystem = fallback{
-			defaultPath: *fallbackPath,
+			defaultPath: viper.GetString("fallbackPath"),
 			fs:          fileSystem,
 		}
 	}

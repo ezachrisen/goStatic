@@ -1,0 +1,8 @@
+endpoints:
+  - 0:
+      context: private
+      basePath: ./public/
+  - 1:
+      context: login
+      basePath: ../login/public/
+

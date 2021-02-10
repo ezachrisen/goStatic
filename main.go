@@ -14,13 +14,17 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+
+	"github.com/spf13/viper"
 )
 
 var (
 	// Def of flags
+	configFile               = flag.String("config", "config.yaml", "The yaml file with config")
 	portPtr                  = flag.Int("port", 8043, "The listening port")
 	context                  = flag.String("context", "", "The 'context' path on which files are served, e.g. 'doc' will serve the files at 'http://localhost:<port>/doc/'")
 	context2                 = flag.String("context2", "", "The 'context' path on which files are served, e.g. 'doc' will serve the files at 'http://localhost:<port>/doc/'")
+	context3                 = flag.String("context3", "", "The 'context' path on which files are served, e.g. 'doc' will serve the files at 'http://localhost:<port>/doc/'")
 	basePath                 = flag.String("path", "/srv/http", "The path for the static files")
 	basePath2                = flag.String("path2", "", "The path for the static files")
 	fallbackPath             = flag.String("fallback", "", "Default fallback file. Either absolute for a specific asset (/index.html), or relative to recursively resolve (index.html)")
@@ -88,10 +92,54 @@ func handleReq(h http.Handler) http.Handler {
 	})
 }
 
+type endpoint struct {
+	context  string
+	basePath string
+	handler  http.Handler
+}
+
+func parseEndpoints() ([]endpoint, error) {
+	retval := []endpoint{}
+
+	viper.SetConfigFile(*configFile)
+	viper.SetConfigType("yaml")
+	err := viper.ReadInConfig()
+	if err != nil {
+		return nil, fmt.Errorf("fatal error config file: %v \n", err)
+	}
+
+	fmt.Println("VIPER FALLBACK = ", viper.GetString("fallback"))
+	fmt.Println("One:", viper.Get("endpoints.0"))
+	endpoints := viper.Get("endpoints").([]interface{})
+	fmt.Println(endpoints)
+	for k, v := range endpoints {
+		fmt.Println(k, v)
+		vMap := v.(map[interface{}]interface{})
+		for _, v2 := range vMap {
+			fmt.Println("KV", v2)
+			m2 := v2.(map[interface{}]interface{})
+			ep := endpoint{
+				context:  m2["context"].(string),
+				basePath: m2["basePath"].(string),
+			}
+			retval = append(retval, ep)
+		}
+	}
+
+	return retval, nil
+
+}
+
 func main() {
 
 	flag.Parse()
 
+	endpoints, err := parseEndpoints()
+	if err != nil {
+		panic(err)
+	}
+
+	fmt.Println("Endpoints: ", endpoints)
 	// sanity check
 	if len(*setBasicAuth) != 0 && !*basicAuth {
 		*basicAuth = true
@@ -99,7 +147,70 @@ func main() {
 
 	port := ":" + strconv.FormatInt(int64(*portPtr), 10)
 
-	var fileSystem http.FileSystem = http.Dir(*basePath)
+	for i := range endpoints {
+		err := makeHandler(&endpoints[i])
+		if err != nil {
+			panic(err)
+		}
+	}
+
+	// if *basicAuth {
+	// 	log.Println("Enabling Basic Auth")
+	// 	if len(*setBasicAuth) != 0 {
+	// 		parseAuth(*setBasicAuth)
+	// 	} else {
+	// 		generateRandomAuth()
+	// 	}
+	// 	handler = authMiddleware(handler)
+	// }
+
+	// headerConfigValid := initHeaderConfig(*headerConfigPath)
+	// if headerConfigValid {
+	// 	handler = customHeadersMiddleware(handler)
+	// }
+
+	// // Extra headers.
+	// if len(*headerFlag) > 0 {
+	// 	header, headerValue := parseHeaderFlag(*headerFlag)
+	// 	if len(header) > 0 && len(headerValue) > 0 {
+	// 		fileServer := handler
+	// 		handler = http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	// 			w.Header().Set(header, headerValue)
+	// 			if !strings.Contains(r.Header.Get("Accept-Encoding"), "gzip") {
+	// 				fileServer.ServeHTTP(w, r)
+	// 			} else {
+	// 				w.Header().Set("Content-Encoding", "gzip")
+	// 				gz := gzPool.Get().(*gzip.Writer)
+	// 				defer gzPool.Put(gz)
+
+	// 				gz.Reset(w)
+	// 				defer gz.Close()
+	// 				fileServer.ServeHTTP(&gzipResponseWriter{ResponseWriter: w, Writer: gz}, r)
+	// 			}
+
+	// 		})
+	// 	} else {
+	// 		log.Println("appendHeader misconfigured; ignoring.")
+	// 	}
+	// }
+
+	// if *healthCheck {
+	// 	http.HandleFunc("/health", func(w http.ResponseWriter, r *http.Request) {
+	// 		fmt.Fprintf(w, "Ok")
+	// 	})
+	// }
+
+	for _, e := range endpoints {
+		http.Handle(e.basePath, e.handler)
+	}
+
+	log.Printf("Listening at 0.0.0.0%v...", port)
+	log.Fatalln(http.ListenAndServe(port, nil))
+}
+
+func makeHandler(e *endpoint) error {
+
+	var fileSystem http.FileSystem = http.Dir(e.basePath)
 
 	if *fallbackPath != "" {
 		fileSystem = fallback{
@@ -107,86 +218,14 @@ func main() {
 			fs:          fileSystem,
 		}
 	}
-
-	handler := handleReq(http.FileServer(fileSystem))
-
-	var handler2 http.Handler
-	if *basePath2 != "" {
-
-		var fileSystem http.FileSystem = http.Dir(*basePath2)
-
-		if *fallbackPath != "" {
-			fileSystem = fallback{
-				defaultPath: *fallbackPath,
-				fs:          fileSystem,
-			}
-		}
-		handler2 = handleReq(http.FileServer(fileSystem))
-	}
+	e.handler = handleReq(http.FileServer(fileSystem))
 
 	pathPrefix := "/"
-	if len(*context) > 0 {
-		pathPrefix = "/" + *context + "/"
-		handler = http.StripPrefix(pathPrefix, handler)
+	if len(e.context) > 0 {
+		pathPrefix = "/" + e.context + "/"
+		e.handler = http.StripPrefix(pathPrefix, e.handler)
 	}
 
-	pathPrefix2 := "/"
-	if len(*context2) > 0 {
-		pathPrefix2 = "/" + *context2 + "/"
-		handler2 = http.StripPrefix(pathPrefix2, handler2)
-	}
+	return nil
 
-	if *basicAuth {
-		log.Println("Enabling Basic Auth")
-		if len(*setBasicAuth) != 0 {
-			parseAuth(*setBasicAuth)
-		} else {
-			generateRandomAuth()
-		}
-		handler = authMiddleware(handler)
-	}
-
-	headerConfigValid := initHeaderConfig(*headerConfigPath)
-	if headerConfigValid {
-		handler = customHeadersMiddleware(handler)
-	}
-
-	// Extra headers.
-	if len(*headerFlag) > 0 {
-		header, headerValue := parseHeaderFlag(*headerFlag)
-		if len(header) > 0 && len(headerValue) > 0 {
-			fileServer := handler
-			handler = http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-				w.Header().Set(header, headerValue)
-				if !strings.Contains(r.Header.Get("Accept-Encoding"), "gzip") {
-					fileServer.ServeHTTP(w, r)
-				} else {
-					w.Header().Set("Content-Encoding", "gzip")
-					gz := gzPool.Get().(*gzip.Writer)
-					defer gzPool.Put(gz)
-
-					gz.Reset(w)
-					defer gz.Close()
-					fileServer.ServeHTTP(&gzipResponseWriter{ResponseWriter: w, Writer: gz}, r)
-				}
-
-			})
-		} else {
-			log.Println("appendHeader misconfigured; ignoring.")
-		}
-	}
-
-	if *healthCheck {
-		http.HandleFunc("/health", func(w http.ResponseWriter, r *http.Request) {
-			fmt.Fprintf(w, "Ok")
-		})
-	}
-
-	http.Handle(pathPrefix, handler)
-	if *basePath2 != "" {
-		http.Handle(pathPrefix2, handler2)
-	}
-
-	log.Printf("Listening at 0.0.0.0%v %v...", port, pathPrefix)
-	log.Fatalln(http.ListenAndServe(port, nil))
 }

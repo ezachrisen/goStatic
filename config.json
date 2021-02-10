@@ -1,0 +1,12 @@
+{
+    "endpoints" : [
+        {
+            "context" : "private",
+            "path" : "./public/"
+        },
+        {
+            "context" : "login",
+            "path" : "./login/public/"    
+        }
+    ]
+}

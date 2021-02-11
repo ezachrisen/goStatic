@@ -82,6 +82,7 @@ func handleReq(h http.Handler) http.Handler {
 		// 	}
 		// 	return
 		// }
+		log.Println("In Handlereq")
 
 		if viper.GetBool("logRequest") {
 			log.Println(r.Method, r.URL.Path)
@@ -92,9 +93,10 @@ func handleReq(h http.Handler) http.Handler {
 }
 
 type endpoint struct {
-	context  string
-	basePath string
-	handler  http.Handler
+	context    string
+	basePath   string
+	pathPrefix string
+	handler    http.Handler
 }
 
 func parseEndpoints() ([]endpoint, error) {
@@ -107,15 +109,10 @@ func parseEndpoints() ([]endpoint, error) {
 		return nil, fmt.Errorf("fatal error config file: %v \n", err)
 	}
 
-	fmt.Println("VIPER FALLBACK = ", viper.GetString("fallback"))
-	fmt.Println("One:", viper.Get("endpoints.0"))
 	endpoints := viper.Get("endpoints").([]interface{})
-	fmt.Println(endpoints)
-	for k, v := range endpoints {
-		fmt.Println(k, v)
+	for _, v := range endpoints {
 		vMap := v.(map[interface{}]interface{})
 		for _, v2 := range vMap {
-			fmt.Println("KV", v2)
 			m2 := v2.(map[interface{}]interface{})
 			ep := endpoint{
 				context:  m2["context"].(string),
@@ -126,7 +123,6 @@ func parseEndpoints() ([]endpoint, error) {
 	}
 
 	return retval, nil
-
 }
 
 func main() {
@@ -138,7 +134,6 @@ func main() {
 		panic(err)
 	}
 
-	fmt.Println("Endpoints: ", endpoints)
 	// sanity check
 	// if len(*setBasicAuth) != 0 && !*basicAuth {
 	// 	*basicAuth = true
@@ -200,7 +195,7 @@ func main() {
 	// }
 
 	for _, e := range endpoints {
-		http.Handle(e.basePath, e.handler)
+		http.Handle(e.pathPrefix, e.handler)
 	}
 
 	log.Printf("Listening at 0.0.0.0%v...", port)
@@ -209,10 +204,13 @@ func main() {
 	log.Printf("  Endoints\n")
 	for i, v := range endpoints {
 		log.Printf("     (%d)\n", i)
-		log.Printf("       Context  : %s\n", v.context)
-		log.Printf("       Base Path: %s\n", v.basePath)
+		log.Printf("       Context    : %s\n", v.context)
+		log.Printf("       Base Path  : %s\n", v.basePath)
+		log.Printf("       Path Prefix: %s\n", v.pathPrefix)
 	}
-	log.Fatalln(http.ListenAndServe(port, nil))
+
+	// handlers.LoggingHandler(os.Stdout, http.DefaultServeMux)
+	log.Fatalln(http.ListenAndServe(port, nil)) //handlers.LoggingHandler(os.Stdout, http.DefaultServeMux)))
 }
 
 func makeHandler(e *endpoint) error {
@@ -233,6 +231,7 @@ func makeHandler(e *endpoint) error {
 		e.handler = http.StripPrefix(pathPrefix, e.handler)
 	}
 
+	e.pathPrefix = pathPrefix
 	return nil
 
 }

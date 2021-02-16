@@ -82,7 +82,7 @@ func handleReq(h http.Handler) http.Handler {
 		// 	}
 		// 	return
 		// }
-		log.Println("In Handlereq")
+		// log.Println("In Handlereq")
 
 		if viper.GetBool("logRequest") {
 			log.Println(r.Method, r.URL.Path)
